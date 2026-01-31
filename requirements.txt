@@ -1,16 +1,6 @@
-# Telegram Bot
 python-telegram-bot==20.7
-
-# Web Framework
-fastapi==0.104.0
+fastapi==0.104.1
 uvicorn[standard]==0.24.0
-
-# Database
+httpx==0.25.1
+pydantic==2.5.0
 sqlite3
-
-# Environment
-python-dotenv==1.0.0
-
-# Utilities
-requests==2.31.0
-Pillow==10.0.0
