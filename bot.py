@@ -2,8 +2,8 @@ import logging
 import os
 import sqlite3
 from datetime import datetime
-from threading import Thread
 import asyncio
+from threading import Thread
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -16,14 +16,13 @@ from telegram.ext import (
 )
 
 # FastAPI
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 import uvicorn
 
 # ========== CONFIGURATION ==========
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "647182059"))
-# لا تحدد PORT - Railway سيعطيه تلقائياً
-PORT = int(os.getenv("PORT", "8000"))  # Railway يستخدم 8000 أو 8080
+PORT = int(os.getenv("PORT", "8000"))
 
 # Enable logging
 logging.basicConfig(
@@ -31,6 +30,9 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+# Global app
+app = FastAPI(title="Telegram Video Bot")
 
 # ========== DATABASE ==========
 def init_db():
@@ -82,30 +84,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• تخصيص مدة وجودة الفيديو\n"
         "• تتبع تاريخ طلباتك\n\n"
         "🚀 **لتبدأ:**\n"
-        "أرسل لي وصف الفيديو الذي تريده\n\n"
-        "📋 **الأوامر:**\n"
-        "/help - للمساعدة\n"
-        "/stats - إحصائياتك\n"
-        "/admin - لوحة التحكم (للمشرف)"
+        "أرسل لي وصف الفيديو الذي تريده"
     )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         "📚 **دليل استخدام البوت:**\n\n"
         "🔹 **لإنشاء فيديو:**\n"
-        "1. أرسل وصف الفيديو (مثال: 'فيديو دعائي لمطعم')\n"
+        "1. أرسل وصف الفيديو\n"
         "2. انتظر معالجة الطلب\n"
         "3. استلم الفيديو الجاهز\n\n"
-        "🔹 **الأوامر المتاحة:**\n"
+        "🔹 **الأوامر:**\n"
         "/start - بدء البوت\n"
-        "/help - هذه الرسالة\n"
+        "/help - المساعدة\n"
         "/stats - إحصائياتك\n"
         "/admin - لوحة التحكم (للمشرف)\n\n"
-        "🔹 **نصائح للوصف:**\n"
-        "• كن واضحاً ووصفياً\n"
-        "• حدد المدة المطلوبة\n"
-        "• اذكر الألوان أو النمط\n\n"
-        "💬 **للاقتراحات والدعم:** @ahelsayed1"
+        "💬 **الدعم:** @ahelsayed1"
     )
     await update.message.reply_text(help_text, parse_mode='Markdown')
 
@@ -118,45 +112,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Save to database
     conn = sqlite3.connect("bot_data.db")
     cursor = conn.cursor()
-    
-    # Save user if not exists
     cursor.execute(
         "INSERT OR IGNORE INTO users (user_id, username, first_name) VALUES (?, ?, ?)",
         (user_id, update.effective_user.username or "", update.effective_user.first_name or "")
     )
     
-    # Save video request
     cursor.execute(
         "INSERT INTO videos (user_id, description) VALUES (?, ?)",
         (user_id, user_text[:500])
     )
-    
     conn.commit()
     conn.close()
     
-    # Create interactive keyboard
     keyboard = [
-        [
-            InlineKeyboardButton("🎬 إنشاء الفيديو", callback_data="create"),
-            InlineKeyboardButton("✏️ تعديل الوصف", callback_data="edit")
-        ],
-        [
-            InlineKeyboardButton("❓ المساعدة", callback_data="help"),
-            InlineKeyboardButton("📊 إحصائيات", callback_data="stats")
-        ]
+        [InlineKeyboardButton("🎬 إنشاء الفيديو", callback_data="create")],
+        [InlineKeyboardButton("❓ المساعدة", callback_data="help")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    response_text = (
-        f"✅ **تم استلام وصف الفيديو!**\n\n"
-        f"📝 **الوصف:**\n"
-        f"_{user_text[:150]}{'...' if len(user_text) > 150 else ''}_\n\n"
-        f"🤖 **ماذا تريد أن أفعل؟**\n"
-        f"اختر أحد الخيارات أدناه:"
-    )
-    
     await update.message.reply_text(
-        response_text,
+        f"✅ **تم استلام وصف الفيديو!**\n\nوصفك: {user_text[:100]}...",
         reply_markup=reply_markup,
         parse_mode='Markdown'
     )
@@ -166,208 +141,81 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     conn = sqlite3.connect("bot_data.db")
     cursor = conn.cursor()
-    
     cursor.execute("SELECT COUNT(*) FROM videos WHERE user_id = ?", (user_id,))
     video_count = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT COUNT(*) FROM users")
-    total_users = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT created_at FROM users WHERE user_id = ?", (user_id,))
-    join_date = cursor.fetchone()
-    
     conn.close()
     
-    stats_text = (
+    await update.message.reply_text(
         f"📊 **إحصائياتك:**\n\n"
-        f"👤 **معلوماتك:**\n"
-        f"• المعرف: `{user_id}`\n"
-        f"• تاريخ الانضمام: {join_date[0] if join_date else 'جديد'}\n\n"
-        f"🎬 **الفيديوهات:**\n"
-        f"• طلباتك: {video_count}\n"
-        f"• المستخدمين الكلي: {total_users}\n\n"
-        f"⭐ **مستواك:** {min(video_count // 3 + 1, 10)}/10"
+        f"🎬 الفيديوهات المنشأة: {video_count}\n"
+        f"⭐ المستوى: {min(video_count // 3 + 1, 10)}/10"
     )
-    
-    await update.message.reply_text(stats_text, parse_mode='Markdown')
 
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
     if user_id != ADMIN_ID:
-        await update.message.reply_text("❌ **غير مصرح لك.** هذه اللوحة للمشرف فقط.")
+        await update.message.reply_text("❌ غير مصرح لك.")
         return
     
     conn = sqlite3.connect("bot_data.db")
     cursor = conn.cursor()
-    
     cursor.execute("SELECT COUNT(*) FROM users")
     total_users = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT COUNT(*) FROM videos")
-    total_videos = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT COUNT(*) FROM users WHERE date(created_at) = date('now')")
-    today_users = cursor.fetchone()[0]
-    
     conn.close()
     
-    admin_text = (
-        f"👑 **لوحة تحكم المشرف**\n\n"
-        f"📊 **إحصائيات النظام:**\n"
-        f"• المستخدمين الكلي: {total_users}\n"
-        f"• الفيديوهات الكلية: {total_videos}\n"
-        f"• مستخدمين اليوم: {today_users}\n\n"
-        f"⚙️ **حالة الخادم:**\n"
-        f"• البوت: ✅ نشط\n"
-        f"• قاعدة البيانات: ✅ متصلة\n"
-        f"• الصحة: ✅ جيدة"
-    )
-    
-    await update.message.reply_text(admin_text, parse_mode='Markdown')
+    await update.message.reply_text(f"👑 **لوحة المشرف**\n\n👥 المستخدمين: {total_users}")
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    callback_data = query.data
-    user_id = query.from_user.id
-    
-    if callback_data == "create":
-        await query.edit_message_text(
-            "🎬 **جارٍ إنشاء الفيديو...**\n\n"
-            "⏳ قد يستغرق هذا بضع ثواني\n"
-            "⚡ البوت يعمل على معالجة طلبك\n\n"
-            "📊 **مراحل المعالجة:**\n"
-            "1. تحليل النص ✅\n"
-            "2. توليد المشاهد 🔄\n"
-            "3. تركيب الفيديو ⏳"
-        )
-        
-        # Simulate video processing
-        await asyncio.sleep(3)
-        
-        await query.edit_message_text(
-            "✅ **تم إنشاء الفيديو بنجاح!**\n\n"
-            "📹 **معلومات الفيديو:**\n"
-            "• المدة: 30 ثانية\n"
-            "• الجودة: 720p HD\n"
-            "• الصيغة: MP4\n\n"
-            "📥 **للتحميل:**\n"
-            "https://example.com/video.mp4\n\n"
-            "🔄 **لإنشاء فيديو جديد:**\n"
-            "أرسل وصفاً آخر"
-        )
-        
-    elif callback_data == "edit":
-        await query.edit_message_text(
-            "✏️ **تعديل الوصف:**\n\n"
-            "أرسل لي الوصف المعدل للفيديو...\n\n"
-            "💡 **نصائح:**\n"
-            "• أضف تفاصيل أكثر\n"
-            "• حدد الألوان المفضلة\n"
-            "• اذكر الموسيقى المناسبة"
-        )
-        
-    elif callback_data == "help":
-        await query.edit_message_text(
-            "❓ **مساعدة سريعة:**\n\n"
-            "📌 **لإنشاء فيديو:**\n"
-            "أرسل وصف الفيديو وسأقوم بإنشائه\n\n"
-            "📌 **أمثلة:**\n"
-            "• 'فيديو دعائي 60 ثانية'\n"
-            "• 'شرح برمجة بطريقة بسيطة'\n"
-            "• 'مشهد طبيعة مع موسيقى هادئة'\n\n"
-            "📞 **الدعم:** @ahelsayed1"
-        )
-        
-    elif callback_data == "stats":
-        conn = sqlite3.connect("bot_data.db")
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM videos WHERE user_id = ?", (user_id,))
-        video_count = cursor.fetchone()[0]
-        conn.close()
-        
-        await query.edit_message_text(
-            f"📊 **إحصائياتك الشخصية:**\n\n"
-            f"👤 المعرف: `{user_id}`\n"
-            f"🎬 الفيديوهات المنشأة: {video_count}\n"
-            f"⭐ التقييم: {'⭐' * min(video_count, 5)}\n\n"
-            f"🚀 **استمر في الإبداع!**"
-        )
+    if query.data == "create":
+        await query.edit_message_text("🎬 **جارٍ إنشاء الفيديو...**\n⏳ يرجى الانتظار")
+        await asyncio.sleep(2)
+        await query.edit_message_text("✅ **تم إنشاء الفيديو!**\n📥 رابط التحميل: example.com/video.mp4")
+    elif query.data == "help":
+        await query.edit_message_text("❓ **مساعدة:**\nأرسل وصف الفيديو وسأقوم بإنشائه")
 
-# ========== FASTAPI APP ==========
-app = FastAPI(title="Telegram Video Bot")
-
+# ========== FASTAPI ROUTES ==========
 @app.get("/")
 async def home():
     return {
         "status": "online",
         "service": "Telegram Video Bot",
-        "version": "2.0.0",
-        "features": [
-            "Telegram Bot with polling",
-            "SQLite Database",
-            "Interactive Keyboards",
-            "Admin Dashboard",
-            "Railway Optimized"
-        ],
-        "endpoints": {
-            "home": "/",
-            "health": "/health",
-            "webhook": "/webhook (POST)"
-        }
+        "version": "2.0",
+        "bot": "running" if BOT_TOKEN else "token_missing"
     }
 
 @app.get("/health")
 async def health_check():
     """Health check endpoint للـ Railway"""
     try:
-        # Test database connection
         conn = sqlite3.connect("bot_data.db")
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM users")
-        user_count = cursor.fetchone()[0]
+        cursor.execute("SELECT 1")
         conn.close()
-        
         return {
             "status": "healthy",
-            "database": "connected",
-            "users": user_count,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "database": "connected"
         }
     except Exception as e:
-        return {
-            "status": "unhealthy",
-            "error": str(e),
-            "timestamp": datetime.now().isoformat()
-        }, 500
+        return {"status": "unhealthy", "error": str(e)}, 500
 
-@app.post("/webhook")
-async def webhook_handler(request: Request):
-    """Webhook endpoint للـ Telegram"""
-    try:
-        data = await request.json()
-        logger.info(f"📨 Webhook received: {data.get('update_id', 'unknown')}")
-        return {"status": "ok", "message": "Webhook received"}
-    except Exception as e:
-        logger.error(f"❌ Webhook error: {e}")
-        return {"status": "error", "message": str(e)}, 500
-
-# ========== MAIN FUNCTION ==========
-def run_fastapi():
-    """تشغيل FastAPI server"""
-    logger.info(f"🚀 Starting FastAPI on port {PORT}")
-    uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="info")
-
+# ========== BOT RUNNER ==========
 def run_bot():
-    """تشغيل Telegram bot"""
+    """تشغيل بوت تليجرام في thread منفصل"""
     if not BOT_TOKEN:
         logger.error("❌ BOT_TOKEN not set!")
         return
     
+    logger.info("🤖 Starting Telegram Bot...")
+    
+    # Initialize database
     init_db()
     
+    # Create and configure bot
     application = ApplicationBuilder().token(BOT_TOKEN).build()
     
     # Add handlers
@@ -378,21 +226,164 @@ def run_bot():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(CallbackQueryHandler(button_handler))
     
-    logger.info("🤖 Starting Telegram bot in polling mode...")
+    # Run bot with polling
+    logger.info("🔄 Bot running in polling mode...")
     application.run_polling()
 
+# ========== MAIN ==========
 def main():
-    """الدالة الرئيسية"""
-    # بدء FastAPI في thread منفصل
-    fastapi_thread = Thread(target=run_fastapi, daemon=True)
-    fastapi_thread.start()
+    """الدالة الرئيسية - تشغيل FastAPI والبوت"""
     
-    # بدء Telegram bot
-    run_bot()
+    # Start bot in a separate thread
+    bot_thread = Thread(target=run_bot, daemon=True)
+    bot_thread.start()
+    
+    logger.info(f"🚀 Starting FastAPI server on port {PORT}")
+    logger.info(f"🌐 Health check available at: /health")
+    logger.info(f"🏠 Home page at: /")
+    
+    # Start FastAPI server
+    uvicorn.run(
+        app, 
+        host="0.0.0.0", 
+        port=PORT,
+        log_level="info"
+    )
 
 if __name__ == "__main__":
     if not BOT_TOKEN:
-        logger.error("❌ BOT_TOKEN environment variable is not set!")
-        logger.error("💡 Please set BOT_TOKEN in Railway Variables")
+        logger.error("❌ Please set BOT_TOKEN environment variable in Railway!")
+        logger.error("💡 Go to Railway → Variables → Add BOT_TOKEN")
     else:
-        main()
+        main()    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(
+        f"✅ **تم استلام وصف الفيديو!**\n\nوصفك: {user_text[:100]}...",
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
+    )
+
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    
+    conn = sqlite3.connect("bot_data.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM videos WHERE user_id = ?", (user_id,))
+    video_count = cursor.fetchone()[0]
+    conn.close()
+    
+    await update.message.reply_text(
+        f"📊 **إحصائياتك:**\n\n"
+        f"🎬 الفيديوهات المنشأة: {video_count}\n"
+        f"⭐ المستوى: {min(video_count // 3 + 1, 10)}/10"
+    )
+
+async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    
+    if user_id != ADMIN_ID:
+        await update.message.reply_text("❌ غير مصرح لك.")
+        return
+    
+    conn = sqlite3.connect("bot_data.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM users")
+    total_users = cursor.fetchone()[0]
+    conn.close()
+    
+    await update.message.reply_text(f"👑 **لوحة المشرف**\n\n👥 المستخدمين: {total_users}")
+
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data == "create":
+        await query.edit_message_text("🎬 **جارٍ إنشاء الفيديو...**\n⏳ يرجى الانتظار")
+        await asyncio.sleep(2)
+        await query.edit_message_text("✅ **تم إنشاء الفيديو!**\n📥 رابط التحميل: example.com/video.mp4")
+    elif query.data == "help":
+        await query.edit_message_text("❓ **مساعدة:**\nأرسل وصف الفيديو وسأقوم بإنشائه")
+
+# ========== FASTAPI ROUTES ==========
+@app.get("/")
+async def home():
+    return {"status": "online", "service": "Telegram Video Bot", "version": "2.0"}
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint للـ Railway"""
+    try:
+        conn = sqlite3.connect("bot_data.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1")
+        conn.close()
+        return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+    except Exception as e:
+        return {"status": "unhealthy", "error": str(e)}, 500
+
+@app.post("/webhook")
+async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
+    """Webhook للـ Telegram (يمكن استخدامه مستقبلاً)"""
+    try:
+        data = await request.json()
+        logger.info(f"📨 Webhook received")
+        return {"status": "ok"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}, 500
+
+# ========== STARTUP EVENT ==========
+@app.on_event("startup")
+async def startup_event():
+    """بدء البوت عند تشغيل FastAPI"""
+    global bot_application
+    
+    if not BOT_TOKEN:
+        logger.error("❌ BOT_TOKEN not set!")
+        return
+    
+    logger.info("🚀 Starting Telegram Bot...")
+    
+    # Initialize database
+    init_db()
+    
+    # Create bot application
+    bot_application = ApplicationBuilder().token(BOT_TOKEN).build()
+    
+    # Add handlers
+    bot_application.add_handler(CommandHandler("start", start))
+    bot_application.add_handler(CommandHandler("help", help_command))
+    bot_application.add_handler(CommandHandler("stats", stats_command))
+    bot_application.add_handler(CommandHandler("admin", admin_command))
+    bot_application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    bot_application.add_handler(CallbackQueryHandler(button_handler))
+    
+    # Start bot in background
+    bot_application.job_queue.start()
+    await bot_application.initialize()
+    await bot_application.start()
+    
+    logger.info("🤖 Bot started successfully!")
+    logger.info(f"🌐 FastAPI running on port {PORT}")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """إيقاف البوت عند إغلاق FastAPI"""
+    global bot_application
+    if bot_application:
+        logger.info("🛑 Stopping bot...")
+        await bot_application.stop()
+        await bot_application.shutdown()
+
+# ========== MAIN ==========
+if __name__ == "__main__":
+    if not BOT_TOKEN:
+        logger.error("❌ Please set BOT_TOKEN environment variable")
+    else:
+        logger.info(f"🚀 Starting server on port {PORT}")
+        uvicorn.run(
+            app, 
+            host="0.0.0.0", 
+            port=PORT,
+            log_level="info"
+        )
