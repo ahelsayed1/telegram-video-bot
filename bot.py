@@ -1,10 +1,9 @@
 import logging
 import os
-import json
 import sqlite3
 from datetime import datetime
-from http.server import HTTPServer, BaseHTTPRequestHandler
 from threading import Thread
+import asyncio
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -16,15 +15,15 @@ from telegram.ext import (
     CallbackQueryHandler,
 )
 
-# FastAPI for web interface
+# FastAPI
 from fastapi import FastAPI, Request
 import uvicorn
 
 # ========== CONFIGURATION ==========
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "647182059"))
-PORT = int(os.getenv("PORT", "10000"))
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")
+# لا تحدد PORT - Railway سيعطيه تلقائياً
+PORT = int(os.getenv("PORT", "8000"))  # Railway يستخدم 8000 أو 8080
 
 # Enable logging
 logging.basicConfig(
@@ -32,29 +31,6 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
-
-# ========== HEALTHCHECK SERVER ==========
-class HealthHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if self.path == '/health' or self.path == '/':
-            self.send_response(200)
-            self.send_header('Content-type', 'text/plain')
-            self.end_headers()
-            self.wfile.write(b'OK')
-        else:
-            self.send_response(404)
-            self.end_headers()
-    
-    def log_message(self, format, *args):
-        # Reduce HTTP logs
-        pass
-
-def run_health_server():
-    """Run a simple HTTP server for health checks on port 8080"""
-    port = 8080
-    server = HTTPServer(('0.0.0.0', port), HealthHandler)
-    logger.info(f"🌐 Health check server running on port {port}")
-    server.serve_forever()
 
 # ========== DATABASE ==========
 def init_db():
@@ -109,7 +85,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "أرسل لي وصف الفيديو الذي تريده\n\n"
         "📋 **الأوامر:**\n"
         "/help - للمساعدة\n"
-        "/stats - إحصائياتك"
+        "/stats - إحصائياتك\n"
+        "/admin - لوحة التحكم (للمشرف)"
     )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -268,7 +245,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         
         # Simulate video processing
-        import asyncio
         await asyncio.sleep(3)
         
         await query.edit_message_text(
@@ -320,15 +296,22 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🚀 **استمر في الإبداع!**"
         )
 
-# ========== FASTAPI WEB SERVER ==========
-app = FastAPI(title="Telegram Video Bot", version="1.0.0")
+# ========== FASTAPI APP ==========
+app = FastAPI(title="Telegram Video Bot")
 
 @app.get("/")
 async def home():
     return {
         "status": "online",
         "service": "Telegram Video Bot",
-        "version": "1.0.0",
+        "version": "2.0.0",
+        "features": [
+            "Telegram Bot with polling",
+            "SQLite Database",
+            "Interactive Keyboards",
+            "Admin Dashboard",
+            "Railway Optimized"
+        ],
         "endpoints": {
             "home": "/",
             "health": "/health",
@@ -338,8 +321,9 @@ async def home():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint for Railway"""
+    """Health check endpoint للـ Railway"""
     try:
+        # Test database connection
         conn = sqlite3.connect("bot_data.db")
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM users")
@@ -357,36 +341,33 @@ async def health_check():
             "status": "unhealthy",
             "error": str(e),
             "timestamp": datetime.now().isoformat()
-        }
+        }, 500
 
 @app.post("/webhook")
 async def webhook_handler(request: Request):
-    """Handle Telegram webhook requests"""
+    """Webhook endpoint للـ Telegram"""
     try:
         data = await request.json()
-        
-        # Here you would process the Telegram update
-        # For now, just log it
         logger.info(f"📨 Webhook received: {data.get('update_id', 'unknown')}")
-        
         return {"status": "ok", "message": "Webhook received"}
     except Exception as e:
         logger.error(f"❌ Webhook error: {e}")
         return {"status": "error", "message": str(e)}, 500
 
 # ========== MAIN FUNCTION ==========
-def main():
-    """Start the bot and web server"""
+def run_fastapi():
+    """تشغيل FastAPI server"""
+    logger.info(f"🚀 Starting FastAPI on port {PORT}")
+    uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="info")
+
+def run_bot():
+    """تشغيل Telegram bot"""
+    if not BOT_TOKEN:
+        logger.error("❌ BOT_TOKEN not set!")
+        return
     
-    # Initialize database
     init_db()
     
-    # Start health check server in a separate thread
-    health_thread = Thread(target=run_health_server, daemon=True)
-    health_thread.start()
-    logger.info("✅ Health check server started")
-    
-    # Create bot application
     application = ApplicationBuilder().token(BOT_TOKEN).build()
     
     # Add handlers
@@ -397,18 +378,17 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(CallbackQueryHandler(button_handler))
     
-    # Check if we should use webhook or polling
-    if WEBHOOK_URL:
-        # Webhook mode for production
-        logger.info(f"🌍 Setting webhook to: {WEBHOOK_URL}/webhook")
-        
-        # Start FastAPI server
-        logger.info(f"🚀 Starting FastAPI server on port {PORT}")
-        uvicorn.run(app, host="0.0.0.0", port=PORT)
-    else:
-        # Polling mode for development
-        logger.info("🔄 Starting bot in polling mode...")
-        application.run_polling()
+    logger.info("🤖 Starting Telegram bot in polling mode...")
+    application.run_polling()
+
+def main():
+    """الدالة الرئيسية"""
+    # بدء FastAPI في thread منفصل
+    fastapi_thread = Thread(target=run_fastapi, daemon=True)
+    fastapi_thread.start()
+    
+    # بدء Telegram bot
+    run_bot()
 
 if __name__ == "__main__":
     if not BOT_TOKEN:
