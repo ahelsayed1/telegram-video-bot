@@ -1,0 +1,12 @@
+[build]
+builder = "nixpacks"
+buildCommand = "pip install --upgrade pip && pip install -r requirements.txt"
+
+[deploy]
+startCommand = "python bot.py"
+healthcheckPath = "/health"
+healthcheckTimeout = 60
+
+[[services]]
+name = "telegram-video-bot"
+port = 10000
