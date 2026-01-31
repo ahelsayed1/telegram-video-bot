@@ -1,49 +1,12 @@
-# Telegram Video Bot - .gitignore
-# Generated: 2024
-
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-
-# Virtual Environments
-env/
-venv/
-
-# Environment Variables
 .env
-.env.local
-.env*.local
-
-# Database
-*.db
-*.sqlite
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+env/
 *.sqlite3
-
-# Generated Videos
-generated_videos/
-*.mp4
-*.avi
-*.mov
-*.wmv
-
-# Logs
+bot_data.db
 *.log
-logs/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
 .DS_Store
-Thumbs.db
-
-# Temp files
-temp/
-tmp/
-downloads/
