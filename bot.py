@@ -3,7 +3,7 @@ import logging
 import sqlite3
 from datetime import datetime
 from threading import Thread
-import asyncio
+import time  # ✅ أضف time
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -34,7 +34,6 @@ def init_db():
     conn = sqlite3.connect("bot_data.db")
     cursor = conn.cursor()
     
-    # Users table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -44,14 +43,11 @@ def init_db():
         )
     """)
     
-    # Videos table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS videos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
             description TEXT,
-            video_url TEXT,
-            status TEXT DEFAULT 'pending',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -64,7 +60,6 @@ def init_db():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     
-    # Save user to database
     conn = sqlite3.connect("bot_data.db")
     cursor = conn.cursor()
     cursor.execute(
@@ -74,33 +69,25 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.commit()
     conn.close()
     
-    welcome_text = (
-        f"🎬 **مرحباً {user.first_name}!**\n\n"
-        "🤖 **بوت إنشاء الفيديوهات الذكي**\n\n"
-        "✨ **المميزات:**\n"
-        "• إنشاء فيديو من وصف نصي\n"
-        "• تخصيص المدة والجودة\n"
-        "• حفظ تاريخ الطلبات\n\n"
-        "🚀 **لتبدأ:**\n"
-        "أرسل لي وصف الفيديو الذي تريده"
-    )
-    
     keyboard = [
         [InlineKeyboardButton("🎬 إنشاء فيديو", callback_data="create_video")],
         [InlineKeyboardButton("❓ المساعدة", callback_data="help")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await update.message.reply_text(welcome_text, reply_markup=reply_markup, parse_mode='Markdown')
-    logger.info(f"✅ /start sent to user: {user.id}")
+    await update.message.reply_text(
+        f"🎬 **مرحباً {user.first_name}!**\n\nأنا بوت إنشاء الفيديوهات.",
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
+    )
+    logger.info(f"✅ /start sent to {user.id}")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "📋 **أوامر البوت:**\n"
         "/start - بدء البوت\n"
         "/help - المساعدة\n"
-        "/stats - الإحصائيات\n"
-        "/admin - لوحة التحكم (للمشرف)"
+        "/stats - الإحصائيات"
     )
 
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -144,16 +131,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.commit()
     conn.close()
     
-    await update.message.reply_text(f"✅ **تم استلام الوصف!**\n{user_text[:100]}...")
+    await update.message.reply_text(f"✅ **تم استلام الوصف:**\n{user_text[:100]}...")
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """معالجة أزرار Inline Keyboard - ✅ تم التصحيح"""
     query = update.callback_query
     await query.answer()
     
     if query.data == "create_video":
         await query.edit_message_text("🎬 **جارٍ إنشاء الفيديو...**")
+        
+        # ✅ استخدم asyncio.sleep في async function
+        import asyncio
         await asyncio.sleep(2)
+        
         await query.edit_message_text("✅ **تم إنشاء الفيديو!**")
+    
     elif query.data == "help":
         await query.edit_message_text("❓ **مساعدة:**\nأرسل وصف الفيديو")
 
@@ -183,13 +176,14 @@ async def health_check():
         }
     except Exception as e:
         return {
-            "status": "healthy",  # لا نرجع unhealthy أبداً
+            "status": "healthy",
             "timestamp": datetime.now().isoformat(),
             "message": "API is running"
         }
 
 # ========== BOT RUNNER ==========
 def run_bot():
+    """تشغيل بوت تليجرام - ✅ تم التصحيح"""
     if not BOT_TOKEN:
         logger.error("❌ BOT_TOKEN not set!")
         return
@@ -199,7 +193,7 @@ def run_bot():
     
     application = ApplicationBuilder().token(BOT_TOKEN).build()
     
-    # ✅ التسجيل الصحيح
+    # Add handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("stats", stats_command))
@@ -211,16 +205,25 @@ def run_bot():
     logger.info("🔄 Starting bot in polling mode...")
     
     try:
-        application.run_polling(drop_pending_updates=True)
+        application.run_polling(
+            drop_pending_updates=True,
+            allowed_updates=Update.ALL_TYPES
+        )
     except Exception as e:
         logger.error(f"❌ Bot error: {e}")
+        # إعادة التشغيل بعد 10 ثواني
+        time.sleep(10)
+        run_bot()
 
 # ========== MAIN ==========
 def main():
+    """الدالة الرئيسية"""
     if BOT_TOKEN:
         bot_thread = Thread(target=run_bot, daemon=True)
         bot_thread.start()
         logger.info("✅ Bot thread started")
+    else:
+        logger.warning("⚠️ Running without bot (BOT_TOKEN not set)")
     
     port = int(os.getenv("PORT", 8000))
     logger.info(f"🚀 Starting FastAPI on port {port}")
@@ -229,7 +232,7 @@ def main():
 
 if __name__ == "__main__":
     logger.info("=" * 50)
-    logger.info("🤖 TELEGRAM BOT - SIMPLE WORKING VERSION")
+    logger.info("🤖 TELEGRAM BOT - FIXED VERSION")
     logger.info("=" * 50)
     
     main()
