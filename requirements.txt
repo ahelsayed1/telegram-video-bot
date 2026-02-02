@@ -1,3 +1,19 @@
+# أساسيات البوت
 python-telegram-bot==20.7
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
+python-dotenv==1.0.0
+
+# البحث والويب
+requests==2.31.0
+aiohttp==3.9.3
+beautifulsoup4==4.12.3
+lxml==4.9.4
+
+# معالجة النصوص
+pytz==2024.1
+
+# (اختياري) للنماذج المحلية
+# transformers==4.37.2
+# torch==2.1.2
+
+# (اختياري) للواجهة
+# flask==3.0.2
